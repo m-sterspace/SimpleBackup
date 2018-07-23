@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 
@@ -15,26 +16,20 @@ namespace SimpleBackup
 
     public static class EncryptionExtensions
     {
-        private static string Decrypt(this byte[] data)
+        public static string Decrypt(this byte[] data)
         {
-            // Create BLOBs to hold data.
-            DATA_BLOB plainTextBlob = new DATA_BLOB();
+            DATA_BLOB plainTextBlob = new DATA_BLOB();//we need to pass all of these as parameters
             DATA_BLOB cipherTextBlob = new DATA_BLOB();
-            DATA_BLOB entropyBlob = new DATA_BLOB();
+            DATA_BLOB entropyBlob = new DATA_BLOB();//though atm I'm omitting entropy so this will just be empty.
 
-            // We only need prompt structure because it is a required
-            // parameter.
-            CRYPTPROTECT_PROMPTSTRUCT prompt =
-                                      new CRYPTPROTECT_PROMPTSTRUCT();
-            InitPrompt(ref prompt);
-
+            CRYPTPROTECT_PROMPTSTRUCT prompt = new CRYPTPROTECT_PROMPTSTRUCT();
+            InitPrompt(ref prompt);//make it empty.
 
             try
             {
                 // Convert ciphertext bytes into a BLOB structure.
                 try
                 {
-                    //InitBLOB(cipherTextBytes, ref cipherTextBlob);
                     // Use empty array for null parameter.
                     if (data == null)
                         data = new byte[0];
@@ -59,17 +54,6 @@ namespace SimpleBackup
                         "Cannot initialize ciphertext BLOB.", ex);
                 }
 
-                // Convert entropy bytes into a BLOB structure.
-                //try
-                //{
-                //    InitBLOB(entropyBytes, ref entropyBlob);
-                //}
-                //catch (Exception ex)
-                //{
-                //    throw new Exception(
-                //        "Cannot initialize entropy BLOB.", ex);
-                //}
-
                 
                 // Call DPAPI to decrypt data.
                 bool success = CryptUnprotectData(ref cipherTextBlob, null, ref entropyBlob, IntPtr.Zero, ref prompt, CryptProtectFlags.CRYPTPROTECT_UI_FORBIDDEN, ref plainTextBlob);
@@ -86,7 +70,7 @@ namespace SimpleBackup
                         "CryptUnprotectData failed.", new Win32Exception(errCode));
                 }
 
-                return Marshal.PtrToStringBSTR(plainTextBlob.pbData);
+                return Marshal.PtrToStringAuto(plainTextBlob.pbData);//convert your pointer back into a string. Not sure why PtrToStringBTSR doesn't work but Auto seems to.
             }
             catch (Exception ex)
             {
@@ -106,12 +90,12 @@ namespace SimpleBackup
             }
         }
 
-        private static Byte[] Encrypt(this SecureString self, int length)
+        public static Byte[] Encrypt(this SecureString self, int length)
         {
-            IntPtr unmanagedString = Marshal.SecureStringToBSTR(self);
-            int len = Marshal.ReadInt32(unmanagedString, -4); //get the length of the bstr string type, it's always the first 4 bytes stored as an int.
+            IntPtr unmanagedString = Marshal.SecureStringToBSTR(self);//get the basic unmanaged string representation
+            int len = Marshal.ReadInt32(unmanagedString, -4) + 2; //get the length of the bstr structure from it's index, this doesn't include the null bytes hence + 2.
 
-            DATA_BLOB plainTextBlob = new DATA_BLOB();
+            DATA_BLOB plainTextBlob = new DATA_BLOB();//initiate our blobs
             DATA_BLOB cipherTextBlob = new DATA_BLOB();
             DATA_BLOB entropyTextBlob = new DATA_BLOB();
             CRYPTPROTECT_PROMPTSTRUCT prompt = new CRYPTPROTECT_PROMPTSTRUCT();
@@ -123,7 +107,6 @@ namespace SimpleBackup
                 plainTextBlob.cbData = len;//set the length of the array
                 plainTextBlob.pbData = unmanagedString;//set the data to our pointer.
                 InitPrompt(ref prompt);
-
 
                 // Call DPAPI to encrypt data.
 
@@ -157,16 +140,16 @@ namespace SimpleBackup
             finally
             {
                 Marshal.ZeroFreeBSTR(unmanagedString); //free the buffer holding our secret
-                if (plainTextBlob.pbData != IntPtr.Zero)
-                    Marshal.FreeHGlobal(plainTextBlob.pbData);
 
                 if (cipherTextBlob.pbData != IntPtr.Zero)
                     Marshal.FreeHGlobal(cipherTextBlob.pbData);
 
-                //if (entropyBlob.pbData != IntPtr.Zero)
-                //    Marshal.FreeHGlobal(entropyBlob.pbData);
             }
         }
+
+       
+        //The below regions are all the PInvoke signatures. These translate C++ commands into usable C# commands. These come directly from pinvoke.net 
+        #region PInvokeSignatures
 
         /// <summary>
         /// Initializes empty prompt structure.
@@ -259,9 +242,9 @@ namespace SimpleBackup
             ref DATA_BLOB pDataOut
         );
 
-
+        #endregion
     }
-    
+
 
 
 
