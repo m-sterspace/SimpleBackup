@@ -1,6 +1,7 @@
 ﻿using CommandLine;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -26,28 +27,9 @@ namespace SimpleBackup
                 Options options = ((Parsed<Options>)result).Value;
 
                 if(options.EditCredentialsFile != null)
-                {
-                    
+                {                  
                     string filepath = options.EditCredentialsFile;
-                    if (File.Exists(filepath))
-                    {
-                        Console.WriteLine("Current Settings: ");
-                        Console.WriteLine(eSettings.ReadFromFile(filepath).Decrypt());
-                    }
-                    else
-                    {
-                        Console.WriteLine("No Existing Settings File Found at : " + options.EditCredentialsFile);
-                    }
-
-                    Console.WriteLine("Change Or Create Settings? (Y/N):");
-                    if (Console.ReadKey().Key != ConsoleKey.Y)
-                        return;
-                    Console.WriteLine();
-                    var set = GetSettings();
-                    set.SerializeToFile(filepath);
-
-                    Console.WriteLine("New Settings: ");
-                    Console.WriteLine(eSettings.ReadFromFile(filepath).Decrypt());
+                    EnterCredentialsMenu(filepath);
                 }
                 else if (options.SourcePath == null || options.SourcePath == "" || options.DestinationPath == null || options.DestinationPath == "")
                 {
@@ -67,9 +49,99 @@ namespace SimpleBackup
             }
         }
 
+        public static void EnterCredentialsMenu(string filepath)
+        {
+            if (File.Exists(filepath))
+            {
+                Console.WriteLine("Current Settings: ");
+                Console.WriteLine(eSettings.ReadFromFile(filepath).Decrypt());
+            }
+            else
+            {
+                Console.WriteLine("No Existing Settings File Found at : " + filepath);
+            }
+
+            Console.WriteLine("Change Or Create Settings? (Y/N):");
+            if (Console.ReadKey().Key != ConsoleKey.Y)
+                return;
+            Console.WriteLine();
+            var set = GetSettings();
+            set.SerializeToFile(filepath);
+
+            Console.WriteLine("New Settings: ");
+            Console.WriteLine(eSettings.ReadFromFile(filepath).Decrypt());
+        }
+
         public static void PerformBackup(Options options)
         {
+
+            string output = ProcessRoboCopy(options.SourcePath, options.DestinationPath);
+            Console.WriteLine();
+            Console.WriteLine(output);
+        }
+
+        /// <summary>
+        /// Method to Perform Xcopy to copy files/folders from Source machine to Target Machine
+        /// </summary>
+        /// <param name="SolutionDirectory"></param>
+        /// <param name="TargetDirectory"></param>
+        private static string ProcessRoboCopy(string sourceFolder, string destinationFolder)
+        {
             
+            // Start the process with the info we specified.
+            // Call WaitForExit and then the using statement will close.
+            Process process = new Process();
+
+            StreamReader outputReader = null;
+            StreamReader errorReader = null;
+            string args = " /MIR /FFT /R:3 /W:10 /Z /NFL /NDL";
+            string txtResult;
+            try
+            {
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.RedirectStandardInput = true;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.FileName = "robocopy";
+                process.StartInfo.Arguments = sourceFolder + " " +destinationFolder + " " + args;
+                bool processStarted = process.Start();
+                if (processStarted)
+                {
+                    //Get the output stream
+                    outputReader = process.StandardOutput;
+                    errorReader = process.StandardError;
+                    process.WaitForExit(10800000); //3 hours
+
+                    //Display the result
+                    string displayText = "Output" + Environment.NewLine + "==============" + Environment.NewLine;
+                    displayText += outputReader.ReadToEnd();
+                    displayText += Environment.NewLine + "Error" + Environment.NewLine + "==============" + Environment.NewLine;
+                    displayText += errorReader.ReadToEnd();
+                    txtResult = displayText;
+                }
+                else
+                    throw new Exception("Couldn't start process!");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("There was an error running the Robocopy process", ex);
+            }
+            finally
+            {
+                if (outputReader != null)
+                {
+                    outputReader.Close();
+                }
+                if (errorReader != null)
+                {
+                    errorReader.Close();
+                }
+                process.Close();
+            }
+
+            return txtResult;
+
         }
 
         public static void SaveCredentials(string filepath)
@@ -230,7 +302,7 @@ namespace SimpleBackup
             [Option('s', "source", Required = false, HelpText = "The source folder path.")]
             public string SourcePath { get; set; }
 
-            [Option('s', "destination", Required = false, HelpText = "The destination folder path.")]
+            [Option('d', "destination", Required = false, HelpText = "The destination folder path.")]
             public string DestinationPath { get; set; }
 
             [Option('e', "email", Required = false, HelpText = "The full file path of the credentials file to use for the email server.")]
